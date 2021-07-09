@@ -8,11 +8,11 @@ void main() => runApp(MyApp());
 class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'BLE Demo',
+        title: 'Anxy',
         theme: ThemeData(
           primarySwatch: Colors.blue,
         ),
-        home: MyHomePage(title: 'Flutter BLE Demo'),
+        home: MyHomePage(title: 'Anxy'),
       );
 }
 
@@ -22,16 +22,14 @@ class MyHomePage extends StatefulWidget {
   final String title;
   final FlutterBlue flutterBlue = FlutterBlue.instance;
   final List<BluetoothDevice> devicesList = [];
-  final Map<Guid, List<int>> readValues = new Map<Guid, List<int>>();
 
   @override
   _MyHomePageState createState() => _MyHomePageState();
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  final _writeController = TextEditingController();
   BluetoothDevice? _connectedDevice;
-  List<BluetoothService> _services = [];
+  int? _heartRate;
 
   _addDeviceTolist(final BluetoothDevice device) {
     if (!widget.devicesList.contains(device)) {
@@ -95,7 +93,29 @@ class _MyHomePageState extends State<MyHomePage> {
                     // throw e;
                     // }
                   } finally {
-                    _services = await device.discoverServices();
+                    List<BluetoothService> services =
+                        await device.discoverServices();
+                    for (BluetoothService service in services) {
+                      if (service.uuid.toString() ==
+                          "0000180d-0000-1000-8000-00805f9b34fb") {
+                        for (BluetoothCharacteristic characteristic
+                            in service.characteristics) {
+                          var isHeartRateCharacteristic =
+                              characteristic.uuid.toString() ==
+                                      "00002a37-0000-1000-8000-00805f9b34fb" &&
+                                  characteristic.properties.notify;
+                          if (isHeartRateCharacteristic) {
+                            characteristic.value.listen((value) {
+                              setState(() {
+                                _heartRate = value[1];
+                              });
+                              print(value);
+                            });
+                            await characteristic.setNotifyValue(true);
+                          }
+                        }
+                      }
+                    }
                   }
                   setState(() {
                     _connectedDevice = device;
@@ -116,183 +136,26 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  List<ButtonTheme> _buildReadWriteNotifyButton(
-      BluetoothService service, BluetoothCharacteristic characteristic) {
-    List<ButtonTheme> buttons = [];
-
-    // if (characteristic.properties.notify) {
-    //   print("UUID:");
-    //   print(characteristic.uuid);
-    // print(service.uuid);
-    if (service.uuid.toString() == "0000180d-0000-1000-8000-00805f9b34fb") {
-      print("");
-      print(service.uuid);
-      print(service.uuid.hashCode);
-      print("!=");
-      print("0000180d-0000-1000-8000-00805f9b34fb".hashCode);
-      print("");
+  Widget _buildMonitorView() {
+    var heartRate = '';
+    if (_heartRate != null) {
+      heartRate = _heartRate.toString();
     }
-    if (service.uuid.toString() == "0000180d-0000-1000-8000-00805f9b34fb") {
-      print("FOUND A HEART");
-      characteristic.value.listen((value) {
-        print("FOUND!!!:");
-        print(value);
-      });
-      characteristic.setNotifyValue(true);
-    }
-    // }
-
-    if (characteristic.properties.read) {
-      buttons.add(
-        ButtonTheme(
-          minWidth: 10,
-          height: 20,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: RaisedButton(
-              color: Colors.blue,
-              child: Text('READ', style: TextStyle(color: Colors.white)),
-              onPressed: () async {
-                var sub = characteristic.value.listen((value) {
-                  setState(() {
-                    widget.readValues[characteristic.uuid] = value;
-                  });
-                });
-                await characteristic.read();
-                sub.cancel();
-              },
-            ),
-          ),
+    return new Center(
+        child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          heartRate,
+          style: TextStyle(fontSize: 100),
         ),
-      );
-    }
-    if (characteristic.properties.write) {
-      buttons.add(
-        ButtonTheme(
-          minWidth: 10,
-          height: 20,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: RaisedButton(
-              child: Text('WRITE', style: TextStyle(color: Colors.white)),
-              onPressed: () async {
-                await showDialog(
-                    context: context,
-                    builder: (BuildContext context) {
-                      return AlertDialog(
-                        title: Text("Write"),
-                        content: Row(
-                          children: <Widget>[
-                            Expanded(
-                              child: TextField(
-                                controller: _writeController,
-                              ),
-                            ),
-                          ],
-                        ),
-                        actions: <Widget>[
-                          FlatButton(
-                            child: Text("Send"),
-                            onPressed: () {
-                              characteristic.write(
-                                  utf8.encode(_writeController.value.text));
-                              Navigator.pop(context);
-                            },
-                          ),
-                          FlatButton(
-                            child: Text("Cancel"),
-                            onPressed: () {
-                              Navigator.pop(context);
-                            },
-                          ),
-                        ],
-                      );
-                    });
-              },
-            ),
-          ),
-        ),
-      );
-    }
-    if (characteristic.properties.notify) {
-      buttons.add(
-        ButtonTheme(
-          minWidth: 10,
-          height: 20,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: RaisedButton(
-              child: Text('NOTIFY', style: TextStyle(color: Colors.white)),
-              onPressed: () async {
-                characteristic.value.listen((value) {
-                  widget.readValues[characteristic.uuid] = value;
-                });
-                await characteristic.setNotifyValue(true);
-              },
-            ),
-          ),
-        ),
-      );
-    }
-
-    return buttons;
-  }
-
-  ListView _buildConnectDeviceView() {
-    List<Container> containers = [];
-
-    for (BluetoothService service in _services) {
-      List<Widget> characteristicsWidget = [];
-
-      for (BluetoothCharacteristic characteristic in service.characteristics) {
-        characteristicsWidget.add(
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Column(
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Text(characteristic.uuid.toString(),
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                Row(
-                  children: <Widget>[
-                    ..._buildReadWriteNotifyButton(service, characteristic),
-                  ],
-                ),
-                Row(
-                  children: <Widget>[
-                    Text('Value: ' +
-                        widget.readValues[characteristic.uuid].toString()),
-                  ],
-                ),
-                Divider(),
-              ],
-            ),
-          ),
-        );
-      }
-      containers.add(
-        Container(
-          child: ExpansionTile(
-              title: Text(service.uuid.toString()),
-              children: characteristicsWidget),
-        ),
-      );
-    }
-
-    return ListView(
-      padding: const EdgeInsets.all(8),
-      children: <Widget>[
-        ...containers,
       ],
-    );
+    ));
   }
 
-  ListView _buildView() {
+  Widget _buildView() {
     if (_connectedDevice != null) {
-      return _buildConnectDeviceView();
+      return _buildMonitorView();
     }
     return _buildListViewOfDevices();
   }
